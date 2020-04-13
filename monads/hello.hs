@@ -12,3 +12,9 @@ helloName = askForName >>
             (\name ->
                 return (sayHello name)) >>=
             putStrLn
+
+helloNameDo :: IO ()
+helloNameDo = do 
+    askForName
+    name <- getLine
+    putStrLn $ sayHello name
