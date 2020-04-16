@@ -1,6 +1,7 @@
 -- HINQ - SQL like queries in Haskell
 -- Get Programming with Haskell (Kurt), Lesson 33
 import Control.Monad
+import Control.Applicative
 
 -- MODEL
 data Name = Name
@@ -31,8 +32,11 @@ data Teacher = Teacher
 data Course = Course
     { courseId :: Int
     , courseTitle :: String
-    , teacherId :: Int
+    , teacher :: Int
     } deriving Show
+
+data HINQ m a b = HINQ (m a -> m b) (m a) (m a -> m a)
+                | HINQ_ (m a -> m b) (m a)
 
 
 -- DATA
@@ -54,12 +58,12 @@ courses = [Course 101 "French" 100
 
 
 -- FUNCTIONS
-_select :: (a -> b) -> [a] -> [b]
+_select :: (Monad m) => (a -> b) -> m a -> m b
 _select f xs = do
     x <- xs
     return $ f x
 
-_where :: (a -> Bool) -> [a] -> [a]
+_where :: (Monad m, Alternative m) => (a -> Bool) -> m a -> m a
 _where pred xs = do
     x <- xs
     guard(pred x)
@@ -68,4 +72,50 @@ _where pred xs = do
 startsWith :: Char -> String -> Bool
 startsWith char str = char == (head str)
 
--- todo: start at implementing _join
+_join :: (Monad m, Alternative m, Eq c) => m a -> m b -> (a -> c) -> (b -> c) -> m (a,b)
+_join xs ys fx fy = do
+    x <- xs
+    y <- ys
+    guard((fx x) == (fy y))
+    return (x,y)
+
+_hinq selectQuery joinQuery whereQuery = (\joinData -> 
+                                                (\whereResult ->
+                                                    selectQuery whereResult)
+                                                (whereQuery joinData)
+                                            ) joinQuery
+
+runHINQ :: (Monad m, Alternative m) => HINQ m a b -> m b
+runHINQ (HINQ sc jc wc) = _hinq sc jc wc
+runHINQ (HINQ_ sc jc) = _hinq sc jc (_where (\_ -> True))
+
+query1 :: HINQ [] (Teacher, Course) Name
+query1 = HINQ (_select (teacherName . fst))
+              (_join teachers courses teacherId teacher)
+              (_where ((=="English") . courseTitle .snd))
+
+query2 :: HINQ [] Teacher Name
+query2 = HINQ_ (_select teacherName)
+               teachers
+
+-- extending to other monads
+possibleTeacher :: Maybe Teacher
+possibleTeacher = Just (head teachers)
+
+possibleCourse :: Maybe Course
+possibleCourse = Just (head courses)
+
+maybeQuery1 :: HINQ Maybe (Teacher, Course) Name
+maybeQuery1 = HINQ (_select (teacherName . fst))
+                   (_join possibleTeacher possibleCourse teacherId teacher)
+                   (_where ((=="French") . courseTitle . snd))
+
+missingCourse :: Maybe Course
+missingCourse = Nothing
+
+missingQuery1 :: HINQ Maybe (Teacher, Course) Name
+missingQuery1 = HINQ (_select (teacherName . fst))
+                   (_join possibleTeacher missingCourse teacherId teacher)
+                   (_where ((=="French") . courseTitle . snd))
+
+-- pick up at 33.6.2
